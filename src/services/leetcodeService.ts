@@ -1,110 +1,150 @@
 import * as vscode from 'vscode';
 
-export interface LeetCodeProblem {
-    questionId: string;
-    questionFrontendId: string;
+export interface TopicTag {
+    id: string;
+    name: string;
+    slug: string;
+}
+
+export interface CodeSnippet {
+    lang: string;
+    langSlug: string;
+    code: string;
+    __typename?: string;
+}
+
+export interface ChallengeQuestion {
+    id: string;
+    date: string;
+    incompleteChallengeCount: number;
+    streakCount: number;
+    type: string;
+    __typename?: string;
+}
+
+export interface OfficialSolution {
+    id: string;
     title: string;
-    titleSlug?: string; 
-    title_slug?: string; // API might return this
-    // In the user provided schema, titleSlug is NOT present in the root.
-    // However, it IS present in 'similarQuestions'.
-    // Wait, the user provided schema for "Two Sum" does NOT have 'titleSlug' at the top level!
-    // It has 'url': "https://leetcode.com/problems/two-sum/"
-    // We can extract slug from URL if needed, or rely on the search result which had it.
-    isPaidOnly: boolean;
-    difficulty: string;
-    likes: number;
+    slug: string;
+    canSeeDetail: boolean;
+    paidOnly: boolean;
+    hasVideoSolution: boolean;
+    paidOnlyVideo: boolean;
+    __typename?: string;
+}
+
+export type ProblemDifficulty = "Easy" | "Medium" | "Hard";
+
+export interface Problem {
+    adminUrl: null | string;
+    boundTopicId: unknown;
+    challengeQuestion: ChallengeQuestion;
+    codeSnippets: CodeSnippet[];
+    companyTagStats: unknown;
+    content: string;
+    contributors: unknown[];
+    difficulty: ProblemDifficulty;
     dislikes: number;
-    categoryTitle: string;
+    enableDebugger: boolean;
+    enableRunCode: boolean;
+    enableTestMode: boolean;
+    envInfo: string;
+    exampleTestcases: string;
+    hints: string[];
+    isLiked: null | boolean;
+    isPaidOnly: boolean;
+    judgeType: string;
+    judgerAvailable: boolean;
+    libraryUrl: null | string;
+    likes: number;
+    metaData: string;
+    mysqlSchemas: unknown[];
+    note: null | string;
+    questionFrontendId: string;
+    questionId: string;
+    sampleTestCase: string;
+    similarQuestions: string;
+    solution: OfficialSolution;
+    stats: string;
+    status: unknown;
+    title: string;
+    titleSlug: string;
+    topicTags: TopicTag[];
+    translatedContent: null | string;
+    translatedTitle: null | string;
+}
+
+export interface ProblemList {
+    questions: {
+        acRate: number;
+        difficulty: "Easy" | "Medium" | "Hard";
+        freqBar: null;
+        hasSolution: boolean;
+        hasVideoSolution: boolean;
+        isFavor: boolean;
+        isPaidOnly: boolean;
+        questionFrontendId: string;
+        questionId?: string;
+        status: null | string;
+        title: string;
+        titleSlug: string;
+        topicTags: {
+            id: string;
+            name: string;
+            slug: string;
+        }[];
+    }[];
+    total: number;
 }
 
 export interface DailyChallenge {
     date: string;
     link: string;
-    question: LeetCodeProblem;
+    question: Problem;
 }
 
-export interface ProblemDetails extends LeetCodeProblem {
-    content: string; // HTML content
-    exampleTestcases?: string; // This might be missing in the new schema
-    hints: string[];
-    link?: string;
-    url?: string;
-    topicTags?: { name: string }[];
-    stats?: string;
-    similarQuestions?: string; // JSON string
-}
+import { LeetCode } from 'leetcode-query';
 
 export class LeetCodeService {
-    private baseUrl = 'https://leetcode-api-pied.vercel.app';
+    private leetcode = new LeetCode();
 
     async getDailyChallenge(): Promise<DailyChallenge> {
         try {
-            const response = await fetch(`${this.baseUrl}/daily`);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch daily challenge: ${response.statusText}`);
-            }
-            const data = await response.json() as any;
-            return data;
+            const daily = await this.leetcode.daily();
+            return daily as unknown as DailyChallenge;
         } catch (error) {
             console.error('Error fetching daily challenge:', error);
             throw error;
         }
     }
 
-    async searchProblems(query: string): Promise<LeetCodeProblem[]> {
+    async getProblems(limit: number = 50, skip: number = 0): Promise<ProblemList> {
         try {
-            const response = await fetch(`${this.baseUrl}/search?query=${encodeURIComponent(query)}`);
-            if (!response.ok) {
-                throw new Error(`Failed to search problems: ${response.statusText}`);
-            }
-            const data = await response.json() as any;
-            return data;
-        } catch (error) {
-            console.error('Error searching problems:', error);
-            throw error;
-        }
-    }
-
-    async getProblems(limit: number = 50, skip: number = 0): Promise<LeetCodeProblem[]> {
-        try {
-            // The API /problems endpoint returns all problems or a list. 
-            // Based on docs: /problems
-            const response = await fetch(`${this.baseUrl}/problems?limit=${limit}&skip=${skip}`);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch problems: ${response.statusText}`);
-            }
-            const data = await response.json() as any;
-            // Assuming data.problemsetQuestionList or similar array
-            // If the API returns a direct array or wrapped object, we need to handle it.
-            // Let's assume it returns { questions: [...] } or [...]
-            // Adjusting based on common API patterns if exact schema isn't known, 
-            // but for now let's assume it returns the list directly or in a standard property.
-            return data.questions || data.stat_status_pairs || data; 
+            const response = await this.leetcode.problems({ limit, offset: skip });
+            return response as unknown as ProblemList;
         } catch (error) {
             console.error('Error fetching problems:', error);
             throw error;
         }
     }
 
-    async getProblem(slug: string): Promise<ProblemDetails> {
+    async searchProblems(query: string): Promise<ProblemList> {
         try {
-            const response = await fetch(`${this.baseUrl}/problem/${slug}`);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch problem details: ${response.statusText}`);
-            }
-            const data = await response.json() as any;
-            // The API response for details doesn't seem to have titleSlug at the root based on user input.
-            // We should inject it back if we know it, or extract from URL.
-            if (!data.titleSlug && data.url) {
-                const parts = data.url.split('/');
-                // url: https://leetcode.com/problems/two-sum/
-                // parts: ["https:", "", "leetcode.com", "problems", "two-sum", ""]
-                data.titleSlug = parts[parts.length - 2];
-            } else if (!data.titleSlug) {
-                 data.titleSlug = slug; // Fallback to the requested slug
-            }
-            return data;
+            const response = await this.leetcode.problems({ 
+                limit: 50, 
+                filters: { searchKeywords: query } 
+            } as any);
+            return response as unknown as ProblemList;
+        } catch (error) {
+            console.error('Error searching problems:', error);
+            throw error;
+        }
+    }
+
+    async getProblem(titleSlug: string): Promise<Problem> {
+        try {
+            const response = await this.leetcode.problem(titleSlug);
+            return response as unknown as Problem;
         } catch (error) {
             console.error('Error fetching problem:', error);
             throw error;

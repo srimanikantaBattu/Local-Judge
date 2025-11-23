@@ -1,19 +1,23 @@
 import * as vscode from 'vscode';
-import { LeetCodeService, LeetCodeProblem } from '../services/leetcodeService';
+import { LeetCodeService, ProblemList } from '../services/leetcodeService';
+
+// Define the type for a single question from ProblemList
+type QuestionSummary = ProblemList['questions'][0];
 
 export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCodeTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<LeetCodeTreeItem | undefined | null | void> = new vscode.EventEmitter<LeetCodeTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData: vscode.Event<LeetCodeTreeItem | undefined | null | void> = this._onDidChangeTreeData.event;
 
-    private allProblems: LeetCodeProblem[] = [];
+    private allProblems: QuestionSummary[] = [];
 
     constructor(private leetCodeService: LeetCodeService) {
         this.refresh();
     }
 
     refresh(): void {
-        this.leetCodeService.getProblems(1000, 0).then(problems => {
-            this.allProblems = problems;
+        // Fetch a large number to ensure we get all problems (currently ~3000+)
+        this.leetCodeService.getProblems(5000, 0).then(problemList => {
+            this.allProblems = problemList.questions;
             this._onDidChangeTreeData.fire();
         }).catch(err => {
             vscode.window.showErrorMessage(`Failed to load problems: ${err}`);
@@ -35,7 +39,8 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
 
         if (element.contextValue === 'all') {
             return Promise.resolve(this.allProblems.map(p => {
-                const id = p.questionFrontendId || p.questionId || '';
+                // Use questionFrontendId as it corresponds to the ID displayed on LeetCode website
+                const id = p.questionFrontendId;
                 const label = id ? `${id}. ${p.title}` : p.title;
                 return new LeetCodeTreeItem(label, vscode.TreeItemCollapsibleState.None, 'problem', p);
             }));
@@ -53,17 +58,27 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
             const difficulty = element.label as string;
             const filtered = this.allProblems.filter(p => p.difficulty === difficulty);
             return Promise.resolve(filtered.map(p => {
-                const id = p.questionFrontendId || p.questionId || '';
+                const id = p.questionFrontendId;
                 const label = id ? `${id}. ${p.title}` : p.title;
                 return new LeetCodeTreeItem(label, vscode.TreeItemCollapsibleState.None, 'problem', p);
             }));
         }
 
         if (element.contextValue === 'tag') {
-            // Extract unique tags from problems if available, or use a predefined list.
-            // Since the basic list might not have tags, we might need to fetch them or use a static list.
-            // For now, let's use a static list of common tags as a placeholder or extract if possible.
-            // Assuming we don't have tags in the basic list, we'll show a placeholder or common ones.
+            // Extract unique tags from problems if available
+            const tags = new Set<string>();
+            this.allProblems.forEach(p => {
+                p.topicTags?.forEach(t => tags.add(t.name));
+            });
+            
+            const sortedTags = Array.from(tags).sort();
+            
+            if (sortedTags.length > 0) {
+                 return Promise.resolve(sortedTags.map(tag => 
+                    new LeetCodeTreeItem(tag, vscode.TreeItemCollapsibleState.Collapsed, 'tag_group')
+                ));
+            }
+
             const commonTags = ['Array', 'String', 'Hash Table', 'Dynamic Programming', 'Math', 'Sorting', 'Greedy', 'Depth-First Search', 'Binary Search', 'Tree'];
             return Promise.resolve(commonTags.map(tag => 
                 new LeetCodeTreeItem(tag, vscode.TreeItemCollapsibleState.Collapsed, 'tag_group')
@@ -71,11 +86,13 @@ export class LeetCodeTreeDataProvider implements vscode.TreeDataProvider<LeetCod
         }
 
         if (element.contextValue === 'tag_group') {
-            // Filtering by tag might require fetching details or if the list has tags.
-            // If the basic list doesn't have tags, this feature is limited.
-            // Let's assume for now we can't filter by tag client-side easily without more data.
-            // We will show a message or try to filter if data allows.
-            return Promise.resolve([new LeetCodeTreeItem('Loading tags not supported in this view yet', vscode.TreeItemCollapsibleState.None, 'info')]);
+            const tag = element.label as string;
+            const filtered = this.allProblems.filter(p => p.topicTags?.some(t => t.name === tag));
+            return Promise.resolve(filtered.map(p => {
+                const id = p.questionFrontendId;
+                const label = id ? `${id}. ${p.title}` : p.title;
+                return new LeetCodeTreeItem(label, vscode.TreeItemCollapsibleState.None, 'problem', p);
+            }));
         }
 
         return Promise.resolve([]);
@@ -87,7 +104,7 @@ export class LeetCodeTreeItem extends vscode.TreeItem {
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly contextValue: string,
-        public readonly problem?: LeetCodeProblem
+        public readonly problem?: QuestionSummary
     ) {
         super(label, collapsibleState);
         this.tooltip = this.label;

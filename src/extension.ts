@@ -2,7 +2,6 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { LeetCodeService } from './services/leetcodeService';
-import { ProblemProvider } from './providers/problemProvider';
 import { LeetCodeTreeDataProvider } from './providers/leetCodeTreeProvider';
 import { getHtmlForWebview } from './utils/webviewUtils';
 
@@ -24,11 +23,9 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	const leetCodeService = new LeetCodeService();
-	const problemProvider = new ProblemProvider(context.extensionUri);
 	const treeDataProvider = new LeetCodeTreeDataProvider(leetCodeService);
 
 	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider(ProblemProvider.viewType, problemProvider),
 		vscode.window.registerTreeDataProvider('localjudge.problems', treeDataProvider)
 	);
 
@@ -95,15 +92,11 @@ export function activate(context: vscode.ExtensionContext) {
 		try {
 			vscode.window.showInformationMessage('Fetching daily challenge...');
 			const daily = await leetCodeService.getDailyChallenge();
-			const question = daily.question || daily; 
+			const question = daily.question;
 			
-			// Fetch full details to get content
-			const slug = question.titleSlug || question.title || 'unknown';
-			const details = await leetCodeService.getProblem(slug);
-			problemProvider.showProblem(details);
-
-			// Focus on the problem view
-			await vscode.commands.executeCommand('localjudge.problemView.focus');
+			// Open the problem using the showProblem command logic
+            // We can just execute the command with the question object
+            await vscode.commands.executeCommand('localjudge.showProblem', question);
 
 		} catch (error) {
 			vscode.window.showErrorMessage(`Failed to get daily challenge: ${error}`);
@@ -118,7 +111,7 @@ export function activate(context: vscode.ExtensionContext) {
 		if (query) {
 			try {
 				const problems = await leetCodeService.searchProblems(query);
-				const items: vscode.QuickPickItem[] = problems.map((p: any) => ({
+				const items: vscode.QuickPickItem[] = problems.questions.map((p: any) => ({
 					label: `${p.questionFrontendId}. ${p.title}`,
 					description: p.difficulty,
 					detail: p.titleSlug
@@ -129,11 +122,8 @@ export function activate(context: vscode.ExtensionContext) {
 				});
 
 				if (selected && selected.detail) {
-					const details = await leetCodeService.getProblem(selected.detail);
-					problemProvider.showProblem(details);
-
-					// Focus on the problem view
-					await vscode.commands.executeCommand('localjudge.problemView.focus');
+                    // Use the showProblem command to open the selected problem
+                    await vscode.commands.executeCommand('localjudge.showProblem', { titleSlug: selected.detail });
 				}
 			} catch (error) {
 				vscode.window.showErrorMessage(`Failed to search problems: ${error}`);
